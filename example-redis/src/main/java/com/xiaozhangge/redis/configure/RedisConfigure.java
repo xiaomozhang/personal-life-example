@@ -19,6 +19,7 @@ import org.springframework.data.redis.connection.jedis.JedisConnectionFactory;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.connection.lettuce.LettucePoolingClientConfiguration;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.Jackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
@@ -181,5 +182,81 @@ public class RedisConfigure {
 
         return Tuple.of(standaloneConfiguration, timeout, maxActive, maxWait, maxIdle, minIdle);
 
+    }
+
+    /**
+     * string redis Template创建操作
+     *
+     * @param database  Redis数据库索引
+     * @param timeout   连接超时时间（秒）
+     * @param maxActive 连接池最大连接数（使用负值表示沒有限制）
+     * @param maxWait   连接池最大等待时间（使用负值表示沒有限制）
+     * @param maxIdle   连接池中的最大空闲连接
+     * @param minIdle   连接池中的最小空闲连接
+     * @param host      Redis服务地址
+     * @param password  Redis服务密码
+     * @param port      Redis服务器连接端口
+     */
+    @Bean(name = "stringRedisTemplate")
+    public StringRedisTemplate stringRedisTemplate(
+            @Value("${spring.redis.database}")
+                    int database,
+            @Value("${spring.redis.timeout:5}")
+                    long timeout,
+            @Value("${spring.redis.lettuce.pool.max-active}")
+                    int maxActive,
+            @Value("${spring.redis.lettuce.pool.max-wait}")
+                    int maxWait,
+            @Value("${spring.redis.lettuce.pool.max-idle}")
+                    int maxIdle,
+            @Value("${spring.redis.lettuce.pool.min-idle}")
+                    int minIdle,
+            @Value("${spring.redis.host}")
+                    String host,
+            @Value("${spring.redis.password}")
+                    String password,
+            @Value("${spring.redis.port}")
+                    int port
+    ) {
+        // connection config
+        RedisStandaloneConfiguration configuration = new RedisStandaloneConfiguration();
+        configuration.setHostName(host);
+        configuration.setPort(port);
+        configuration.setPassword(RedisPassword.of(password));
+        configuration.setDatabase(database);
+
+        // pool config
+        GenericObjectPoolConfig genericObjectPoolConfig = new GenericObjectPoolConfig();
+        genericObjectPoolConfig.setMaxTotal(maxActive);
+        genericObjectPoolConfig.setMinIdle(minIdle);
+        genericObjectPoolConfig.setMaxIdle(maxIdle);
+        genericObjectPoolConfig.setMaxWaitMillis(maxWait);
+
+        // create connection factory
+        LettucePoolingClientConfiguration.LettucePoolingClientConfigurationBuilder builder = LettucePoolingClientConfiguration.builder();
+        builder.poolConfig(genericObjectPoolConfig);
+        builder.commandTimeout(Duration.ofSeconds(timeout));
+        LettuceConnectionFactory connectionFactory = new LettuceConnectionFactory(
+                configuration, builder.build()
+        );
+        connectionFactory.afterPropertiesSet();
+
+        // create redis template
+        return createStringRedisTemplate(connectionFactory);
+
+    }
+
+    /**
+     * 建立StringRedisTemplate
+     * 此function不能加 @Bean 否则onnectionFactory 将会一律采用预设值
+     */
+    private StringRedisTemplate createStringRedisTemplate(
+            RedisConnectionFactory redisConnectionFactory
+    ) {
+        StringRedisTemplate redisTemplate = new StringRedisTemplate();
+        redisTemplate.setConnectionFactory(redisConnectionFactory);
+        redisTemplate.setKeySerializer(new StringRedisSerializer());
+        redisTemplate.setValueSerializer(new StringRedisSerializer());
+        return redisTemplate;
     }
 }
